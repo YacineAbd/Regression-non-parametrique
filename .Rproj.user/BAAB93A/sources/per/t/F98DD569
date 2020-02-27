@@ -1,0 +1,27 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1577374215181.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3290459798",
+    "id" : "F98DD569",
+    "lastKnownWriteTime" : 1577805961,
+    "last_content_update" : 1577805961,
+    "path" : "C:/Users/yassine abdou/Desktop/dossier_global/Projet camelia2/Projet2_DataScience_camelia/Rapport_projet2.Rmd",
+    "project_path" : "Rapport_projet2.Rmd",
+    "properties" : {
+        "cursorPosition" : "1199,7",
+        "docOutlineVisible" : "0",
+        "scrollLine" : "1107",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

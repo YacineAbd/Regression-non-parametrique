@@ -1,0 +1,1210 @@
+---
+title: "Régression non-paramétrique"
+author: "Yassine ABDOU-Mohamed BERRAMOU"
+date: "31/12/2019"
+output:
+ pdf_document: 
+   number_sections: yes
+   toc: yes
+header-includes: \usepackage[french]{babel}
+---
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+#   ____________________________________________________________________________
+#   I. Packages                                                             ####
+library(tidyverse)
+library(dplyr)
+library(broom)
+library(ggplot2)
+library(kableExtra)
+library(reshape2)
+library(gridExtra)
+library(splines)
+library(polywog)
+library(rlist)
+#   ____________________________________________________________________________
+#   II. Vector of colours                                                   ####
+Pamplemousse_colour <-
+  c("#0218a2", "#ffb703", "#f76f73", "#027fdc", "#07c4c5")
+Nueva_colour <-
+  c("#012345", "#aa2345", "#ffa500", "#abcdef", "#d7a0e1")
+
+#   ____________________________________________________________________________
+#   III. Fonctions                                                          ####
+source("Fonctions/Theme_ggplot.r")
+
+```
+
+
+# Préambule
+
+## Objectif de l’étude
+
+Ce travail est une application des méthodes non-paramétriques faites dans le cours.
+
+Nous disposons d'une table de données nommée ***fossil*** et notre objectif sera d'estimer la variable d'intérêt **strontium.ratio** en fonction de l'**âge**. Pour cela, nous allons commencer avec une estimation par régression polynômiale, ensuite une estimation non-paramétrique par les fonctions **Splines**, l'estimation à noyau et finalement, l'estimation par splines quadratiques pénalisées.
+
+## Importation et description de la table
+
+Afin d'entamer notre analyse, nous allons tout d'abord importer notre table de données.
+
+La table de données est en format *(.txt)*, pour cela nous allons utiliser la fonction **read.table()** pour l'importer en précisant (**header = T**) pour que les noms des variables soient prises en compte.
+
+```{r}
+
+fossil <-
+  read.table("data/fossil.txt",
+    header = T,
+    encoding = "UTF-8"
+  ) %>% 
+  mutate(age_norm = (age-min(age))/(max(age)-min(age)))
+
+fossil %>%
+  head(10) %>%
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "Les dix premières lignes de notre table de données",
+    col.names = c("Age (M.a)", "Rapports_strontium", "Age normalisé")
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Notre table de données contient 106 observations sur des coquilles fossiles et deux variables, la première est **Age** en millions d'années et la deuxième **strontium.ratio** qui représente les rapports des isotopes du strontium.
+
+```{r}
+
+Resum_fossil <- fossil %>%
+  dplyr::select(-3) %>% 
+  summary() %>%
+  as.data.frame() %>%
+  separate(Freq, c("description", "freq"), ":") %>%
+  pivot_wider(names_from = description, values_from = freq) %>%
+  select(-Var1) %>%
+  rename(variables = Var2)
+
+Resum_fossil %>%
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "Résumé des variables",
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Nous constatons d'après la table ci-dessus que la variable **age** varie entre *91.79* et *123* millions d'année et la variable **strontium.ratio** varie entre *0.7072* et *0.7075*.
+
+# Estimateur par des modèles de regression polynmiale:
+
+```{r}
+# Représentation graphique
+gg <- fossil %>%
+  ggplot() +
+  geom_point(mapping = aes(
+    x = age,
+    y = strontium.ratio
+  ),col = "red") +
+  labs(
+    x = "Age en Millions d'années",
+    y = "Rapports du strontium",
+    title = "Rapports des isotopes du strontium en fonction de l'age"
+  ) +
+  theme_grey()
+
+gg
+```
+
+Nous constatons d'après le graphe ci-dessus que la relation entre nos deux variables **strontium.ratio~age** ne suit pas une tendance linéaire.
+
+Pour cela, nous allons utiliser des méthodes non-linéaires, nous allons commencer par la régression polynômiale *(degré 4)*
+
+```{r}
+Reg_poly4 <- lm(strontium.ratio ~ poly(age, 4), data = fossil)
+
+resum_coef <- Reg_poly4 %>%
+  tidy()
+
+Resum_poly4 <- Reg_poly4 %>%
+  summary()
+
+resum_coefR <- data.frame(
+  R_squared = Resum_poly4$r.squared,
+  adj_R_squared = Resum_poly4$adj.r.squared,
+  Sigma2 = Resum_poly4$sigma
+)
+
+merge(resum_coef, resum_coefR) %>%
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "Résumé du modèle de la régression polynômiale",
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Nous constatons que notre **R-carré** est égale à  *0.7306704* et que toutes les variables sont très significatives avec un résidu de *4.02e-05*.
+
+```{r}
+g_poly4 <- fossil %>%
+  ggplot() +
+  geom_point(mapping = aes(y = strontium.ratio, x = age, colour = "black")) +
+  geom_line(
+    mapping = aes(
+      x = age,
+      y = predict(Reg_poly4),
+      colour = "#0218a2",
+    ),
+    size = 1.5
+  ) +
+  scale_color_identity(
+    name = "Régression polynômiale",
+    breaks = c("black", "#0218a2"),
+    labels = c(
+      "Nuage de points",
+      "Degré 4"
+    ),
+    guide = "legend"
+  ) +
+  labs(title = "Ajustement de la régression polynômiale (Degré 4 )") +
+  theme(legend.position = "bottom", legend.box = "horizontal") +
+  theme_ggplot()
+
+g_poly4
+```
+
+Comparativement à la régression linéaire simple, la régression polynomiale nous donne une courbe plus ajustée à notre jeu de données.
+
+Nous allons dans la suite de cette partie calculer la précision prédictive de la régression polynômiale pour différents degrés. Pour cela nous allons dans un premier temps séparer notre jeu de données en **base d'apprentissage** et en **base de test**, ensuite nous allons adopter  la **validation croisée** comme une méthode de séparation. 
+
+```{r}
+set.seed(0207)
+N_ligne <- nrow(fossil)
+vect_random <- sample(1:N_ligne, 0.7 * N_ligne)
+
+Data_train <- fossil %>%
+  slice(vect_random)
+
+Data_test <- fossil %>%
+  slice(-vect_random)
+
+age_test <- Data_test$age
+age_train <- Data_train$age
+
+strontium.ratio_test <- Data_test$strontium.ratio
+strontium.ratio_train <- Data_train$strontium.ratio
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+#' Mean Square Error
+#'
+#' @param LM_fit le modèle
+#' @param df la table
+#'
+#' @return erreur_train
+#' @export
+#'
+#' @examples
+err_prediction <- function(LM_fit, df) {
+  (df %>%
+    .$strontium.ratio - LM_fit %>%
+    predict(df %>% select(-strontium.ratio)))^2 %>%
+    mean()
+}
+```
+
+
+```{r message=FALSE, warning=FALSE}
+Reg_poly_n <-
+  lapply(2:15, function(x) {
+    lm(strontium.ratio ~ poly(age, x, raw = TRUE), data = Data_train)
+  })
+
+MSE_polyDegre <-
+  lapply(1:length(Reg_poly_n), function(x) {
+    Reg_poly_n[[x]] %>% err_prediction(Data_test)
+  }) %>% 
+  unlist()
+```
+
+Pour la validation croisée nous allons utiliser la fonction **cv.polywog** prédéfinie dans R, cette dernière nous donne la possibilité de choisir le nombre de **fold** souhaité.
+
+```{r}
+# Validation croisée
+set.seed(0207)
+cv1 <- cv.polywog(strontium.ratio ~ scale(age),
+                  data = fossil,
+                  degrees.cv = 2:15,
+                  nfolds = 7,
+                  thresh = 1e-4)
+err_1 <- cv1$results
+MSE_CV_PolyRegr <- err_1[,3]
+
+```
+
+
+```{r include=FALSE}
+data_erreurs <- data.frame(
+  Degre = 2:15,
+  MSE_polyDegre = MSE_polyDegre,
+  MSE_CV_PolyRegr = MSE_CV_PolyRegr
+)
+data_erreurs_melt <- data_erreurs %>% 
+  reshape2::melt(id = 1 , value.name = 'value' , variable = 'type_erreur')
+
+```
+
+```{r echo=FALSE}
+data_erreurs_melt %>% 
+  ggplot() + 
+  geom_point(mapping = aes(x = Degre, y = value, col = type_erreur)) + 
+  geom_line(mapping = aes(x = Degre, y = value, col = type_erreur)) 
+```
+Nous constatons que l'erreur minimale obtenue par la régression polynômiale par validation croisée est plus grande que celle obtenue par la division classique du jeu de données.
+
+On conclut que la régression polynômiale de degré **6** donne une erreur minimale de **7.766777e-10**.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+  ggplot() +
+  geom_point(mapping = aes(y = strontium.ratio_train, x = age_train, colour = "black")) +
+  geom_point(mapping = aes(y = strontium.ratio_test, x = age_test, colour = "blue")) +
+  geom_line(mapping = aes(
+    x = age_train,
+    y = predict(Reg_poly_n[[2]]),
+    colour = "#0218a2"
+  ),
+  size = 1.5) +
+  geom_line(mapping = aes(
+    x = age_train,
+    y = predict(Reg_poly_n[[5]]),
+    colour = "#aa2345"
+  ),
+  size = 1.5) +
+  geom_line(mapping = aes(
+    x = age_train,
+    y = predict(Reg_poly_n[[13]]),
+    colour = "#ffa500"
+  ),
+  size = 1.5) +
+  scale_color_identity(
+    name = "",
+    breaks = c("black", "blue", "#0218a2", "#aa2345", "#ffa500"),
+    labels = c(
+      "Base d'apprentissage",
+      "Base de test",
+      "Degre 3",
+      "Degre 6",
+      "Degre 14"
+    ),
+    guide = "legend"
+  ) +
+  labs(title = "Différentes régressions polynomiales") +
+  theme(legend.position = "bottom", legend.box = "horizontal") +
+  theme_ggplot()
+
+```
+
+Le graphe ci-dessus représente trois courbes obtenues par régression polynômiale de degré *3, 6 et 14*.
+
+Nous constatons que la courbe de degré 3 est relativement proche aux nuages de points, cependant nous remarquons que la courbe de degré 6 colle bien aux valeurs inférieurs à **105** comparativement à la courbe de degré 14, et elles sont toutes les deux superposées pour toutes les valeurs supérieures à **105**.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+resum_coef11 <- Reg_poly_n[[5]] %>%
+  tidy()
+
+Resum_poly11 <- Reg_poly_n[[5]] %>%
+  summary()
+
+resum_coefR11 <- data.frame(
+  R2 = Resum_poly11$r.squared,
+  aR2 = Resum_poly11$adj.r.squared
+)
+
+merge(resum_coef11, resum_coefR11) %>%
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "Résumé du modèle de la régression polynômiale (Degré 6)",
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+
+```
+Nous constatons que les valeurs de $R^2$ et $R^2$ ajustés sont plus grandes que celles obtenues par le polynôme de degré 4. Cela nous prouve que ce modèle est bel et bien meilleur que celui choisi avant.
+
+# Estimateur par des B-splines
+
+Les B-splines sont des fonctions définies par morceaux par des polynômes, elles sont plus flexibles car elles proposent de rajouter des noeuds et aussi elles adaptent les coefficients entre chaque deux noeuds pour donner une approche plus précise à notre nuage de points. 
+
+```{r message=FALSE, warning=FALSE}
+attach(fossil)
+Bbase <- lm(strontium.ratio~bs(age,df=6,degree=2, intercept=TRUE)-1)
+detach(fossil)
+
+```
+
+```{r echo=FALSE}
+fossil %>%
+  ggplot() +
+  geom_point(
+    mapping = aes(x = age, y = strontium.ratio, colour = "black"),
+    size = 1.5
+  ) +
+  geom_line(mapping = aes(age, predict(Bbase), colour = "blue"),
+            size = 1.2) +
+  scale_color_identity(
+    name = "B-spline",
+    breaks = c("black", "blue", "red"),
+    labels = c("Jeu de données",
+               "Bspline avec D°2 et df=6",
+               "Reg poly degré 4"),
+    guide = "legend"
+  ) +
+  labs(title = "Estimation par Bspline et Régression polynomiale") +
+  theme(legend.position = "bottom", legend.box = "horizontal") +
+  theme_ggplot()
+
+```
+
+Le graphe ci-dessus représente une estimation du nuage de point de notre jeu de données par Bsplines avec un degré 2, et 6 degrés de liberté.
+
+```{r}
+err_prediction(Bbase, fossil)
+```
+L'erreur obtenue est égale à **8.900049e-10**.
+
+Nous constatons que l'estimation par Bspline estime mieux notre jeu de données, car sa courbe colle bien aux nuages de points comparativement à la régression polynomiale.
+
+Nous allons maintenant appliquer ce modèle pour prédire les valeurs de notre variable d'intérêt **strontium.ratio**. Pour cela nous allons commencer par le choix du degré de liberté qui donne l'erreur minimale.
+
+```{r message=FALSE, warning=FALSE}
+attach(Data_train)
+Reg_Bspline <-
+  lapply(1:15, function(x) {
+    lapply(1:15, function(y) {
+      lm(strontium.ratio ~ bs(
+        age,
+        df = x + y + 1,
+        degree = x,
+        intercept = TRUE
+      ) - 1)
+    })
+  })
+
+MSE_Bspline <-
+  lapply(1:length(Reg_Bspline), function(x) {
+    lapply(1:length(Reg_Bspline), function(y) {
+      Reg_Bspline[[x]][[y]] %>% err_prediction(Data_test)
+    })
+  }) %>%
+  unlist()
+
+detach(Data_train)
+```
+
+```{r include=FALSE}
+data_erreurs_Bspline <- data.frame(
+  Df = rep(1:15,15),
+  Degre = rep(1:15, each = 15),
+  MSE_Bspline = MSE_Bspline
+)
+
+```
+
+```{r}
+
+options( "digits"=14, "scipen"=0)
+
+MSE_data_min <- data_erreurs_Bspline %>% 
+  filter(MSE_Bspline == min(MSE_Bspline))
+
+MSE_data_min %>% 
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "Estimation par Bsplines",
+    col.names = c("Degré de liberté","Degré", "Erreur obtenue")
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+
+L'MSE minimale est égale à  *7.891356e-10*, elle est obtenue avec un degré 2 et 11 degrés de liberté.
+
+```{r message=FALSE, warning=FALSE}
+Bbase <-
+  lm(strontium.ratio_train ~ bs(
+    age_train,
+    df = 11,
+    degree = 2,
+    intercept = TRUE
+  ) - 1)
+
+```
+
+```{r echo=FALSE}
+ggplot() +
+  geom_point(mapping = aes(y = strontium.ratio_train, 
+                           x = age_train, 
+                           colour = "red")) +
+  geom_point(mapping = aes(y = strontium.ratio_test, 
+                           x = age_test, 
+                           colour = "blue")) +
+  geom_line(mapping = aes(age_train,
+                          predict(Bbase),
+                          colour = "black"),
+            size = 1.2) +
+  geom_line(mapping = aes(x = age_train,
+                          y = predict(Reg_poly_n[[5]]),
+                          colour = "#aa2345"
+  ),
+  size = 1.2) +
+  scale_color_identity(
+    name = "",
+    breaks = c("red", 
+               "blue", 
+               "black",
+               "#aa2345"),
+    labels = c(
+      "Base d'apprentissage",
+      "Base de test",
+      "Bspline avec D° = 2 et df = 11",
+      "Degré 6"
+    ),
+    guide = "legend"
+  ) +
+  labs(title = "Estimation par Bspline et régression polynômiale ") +
+  theme(legend.position = "bottom",
+        legend.box = "horizontal") +
+  theme_ggplot()
+
+```
+
+#  Estimateur à noyau de la régression
+
+Afin de trouver une meilleure approche de la relation entre la variable à expliquer **strontium.ratio** et la variable explicative **age**, nous allons construire un estimateur à noyau. Pour cela nous allons utiliser le noyau d'**Epanechnikov**, qui est défini par $$K(u) = \frac{3}{4}(1-u^2)1_{|u| \le 1}$$.
+
+Nous allons tout d'abord coder la fonction **K(u)**, puis représenter la forme de ce noyau.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+#' la fonction indicatrice de |x| < 1
+#'
+#' @param x peut être un vecteur ou une valeur mais 
+#'
+#' @return la fonction retourne une vecteur logique
+#' @export
+#'
+#' @examples fonction_indicatrice(-2:2) FALSE  TRUE  TRUE 
+fonction_indicatrice <- function(x){
+  return(abs(x) <= 1)
+}
+
+#' la function utilisé dans la fonction Epanechnikov
+#'
+#' @param t 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+K <- function(t) {
+   return((3/4)*(1 - t^2)*fonction_indicatrice(t))
+}
+```
+
+```{r}
+u <- seq(-2, 2, length.out = 200)
+
+ggplot() +
+  geom_line(mapping = aes(x = u, y = K(u)),
+            col = "blue",
+            size = 1.2) +
+  theme_ggplot()
+
+```
+
+Nous allons maintenant construire une fonction **hat_f** qui va permettre d'estimer la fonction de régression de **strontium.ratio** au point **age**.
+
+```{r message=FALSE, warning=FALSE}
+# Epanechnikov quadratic kernel
+#' Title
+#'
+#' @param x_0 
+#' @param x 
+#' @param h 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+K_lambda <- function(x_0, x, h){
+  K(abs(x - x_0) / h)
+}
+
+# average
+#' Title
+#'
+#' @param x_0 
+#' @param x 
+#' @param h 
+#' @param y 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+hat_f <- function(x_0, x = x, h, y = y){
+  return(sum(K_lambda(x_0, x, h) * y) / sum(K_lambda(x_0, x, h)))
+}
+
+```
+
+La fonction ci-dessus nous calcule la prédiction de notre variable d'intérêt **y** en utilisant la fonction codée précèdement *hat_f*.
+
+Dans notre cas, nous allons prendre **n = nrow(fossil)**, **x = age**, **y = strontium.ratio** et **h = 7** .
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+#' Prédiction de y
+#'
+#' @param n 
+#' @param x_0 
+#' @param x 
+#' @param h 
+#' @param y 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+pred_y <-
+  function(n, x_0, x, h, y) {
+    lapply(1:n, function(t) {
+      hat_f(x_0[t], x, h, y)
+    }) %>%
+      unlist()
+  }
+
+attach(fossil)
+ratio.pred <- pred_y(nrow(fossil), 
+                     age, 
+                     age,
+                     7,
+                     strontium.ratio)
+detach(fossil)
+```
+
+```{r message=FALSE, warning=FALSE}
+attach(fossil)
+
+MSE_ker <-((strontium.ratio - ratio.pred)^2) %>% 
+  mean()
+
+MSE_ker
+
+detach(fossil)
+```
+
+L'erreur quadratique moyenne obtenue est de **1.979185e-09**
+
+```{r}
+fossil %>% 
+  ggplot() +
+  geom_point(mapping = aes(y = strontium.ratio,
+                           x = age,
+                           colour = "red")) +
+  geom_line(mapping = aes(y = ratio.pred,
+                          x = age,
+                          colour = "blue"),
+            size = 1.2) +
+  scale_color_identity(
+    name = "Estimation",
+    breaks = c("red",
+               "blue"),
+    labels = c(
+      "Jeu de données",
+      "Noyau"
+    ),
+    guide = "legend"
+  ) +
+  labs(title = "Estimation à noyau ") +
+  theme(legend.position = "bottom",
+        legend.box = "horizontal") +
+  theme_ggplot()
+```
+
+Dans le but d'améliorer notre prédiction, nous allons utiliser la validation croisée pour diviser notre jeu de données. Pour cela nous allons la recoder à la main:
+
+```{r message=FALSE, warning=FALSE}
+
+cv_noyau <- function(n, x, x_0, y_fossil, y_rat.pre, h) {
+  w <-
+    lapply(1:n, function(z) {
+      K((x - x_0[z]) / h) / sum(K((x - x_0[z]) / h))
+    }) %>%
+    unlist()
+  
+  e <-
+    lapply(1:n, function(v) {
+      ((y_fossil[v] - y_rat.pre[v]) / (1 - w[v])) ^ 2
+    }) %>%
+    unlist()
+  
+  CV_erreur <- mean(e)
+  
+  return(CV_erreur)
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+attach(fossil)
+error_CV <- cv_noyau(nrow(fossil), age, age, strontium.ratio, ratio.pred, 7)
+error_CV
+```
+
+```{r}
+h <- seq(from=0.5,to=5, by=0.1)
+cv_noyau_h <-
+  lapply(h, function(j) {
+    cv_noyau(nrow(fossil), age, age, strontium.ratio, ratio.pred, j)
+  }) %>%
+  unlist()
+
+
+Data_erreur_h2 <- data.frame(
+  h = h,
+  cv_noyau_h = cv_noyau_h
+)
+
+```
+
+```{r}
+Data_erreur_h2 %>%
+  ggplot() +
+  geom_point(
+    mapping = aes(y = cv_noyau_h, x = h),
+    colour = "black",
+    size = 1.5,
+    shape = 21,
+    fill = "black"
+  ) +
+  geom_line(
+    mapping = aes(y = cv_noyau_h, x = h),
+    colour = "blue",
+    size = 1.2,
+    linetype = "dashed"
+  ) +
+  labs(title = "Erreur en fonction des valeurs de h", 
+       y = "MSE") +
+  theme_ggplot()
+```
+
+```{r}
+h_opt = Data_erreur_h2 %>% slice(which(cv_noyau_h==min(cv_noyau_h)))
+
+h_opt %>% 
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "Estimation à noyau",
+    col.names = c("Valeur de h", "Erreur obtenue")
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+L'erreur minimale est obtenue avec **h = 3.2**.
+
+Nous observons que l'erreur a largement diminué entre **h = 0.5** et **h = 2**, cependant, elle a l'air constante pour les valeurs de **h** supérieures à 2.
+
+Afin de gérer le compromis *biais-variance*, nous allons prendre **h = 2**.
+
+Nous allons maintenant représenter les courbes obtenues par les trois méthodes (*Régression polynômiale*, *Bspline* et *Estimation à noyau*):
+
+
+```{r message=FALSE, warning=FALSE}
+Data_train %>%
+  attach()
+
+ratio.pred_train <-
+  pred_y(nrow(Data_train), age, age, 2, strontium.ratio)
+
+Data_train %>%
+  ggplot() +
+  geom_point(mapping = aes(y = strontium.ratio, 
+                           x = age, 
+                           colour = "red")) +
+  geom_point(
+    data = Data_test,
+    mapping = aes(
+      y = Data_test$strontium.ratio,
+      x = Data_test$age,
+      colour = "blue"
+    )
+  ) +
+  geom_line(mapping = aes(age, predict(Bbase), colour = "black"),
+            size = 1.2) +
+  geom_line(mapping = aes(
+    x = age,
+    y = predict(Reg_poly_n[[5]]),
+    colour = "#aa2345"
+  ),
+  size = 1.2) +
+  geom_line(mapping = aes(y = ratio.pred_train, 
+                          x = age, 
+                          colour = "#07c4c5"),
+            size = 1.2) +
+  scale_color_identity(
+    name = "",
+    breaks = c("red", "blue", "black", "#aa2345", "#07c4c5"),
+    labels = c(
+      "Data_train",
+      "Data_test",
+      "Bspline D° = 2 et df = 11",
+      "Degré 6",
+      "Noyau h = 2 "
+    ),
+    guide = "legend"
+  ) +
+  labs(title = "Estimation par différentes méthodes") +
+  theme(legend.position = "bottom", legend.box = "horizontal") +
+  theme_ggplot()
+
+Data_train %>%
+  detach()
+```
+
+Nous constatons d'après le graphe ci-dessus que l'estimation à noyau donne une meilleure approche pour toutes les valeurs inférieures à **105** millions d'années et supérieures à **110**, cependant nous remarquons que toutes les méthodes estiment bien notre variable d'intérêt pour les valeurs entre **105** et **110** millions d'années.
+
+#  Estimation par splines quadratiques pénalisées
+
+Nous allons dans cette partie construire une fonction qui permettra d’estimer une fonction de régression à l’aide de splines pénalisées quadratiques.
+
+D'après le cours, nous avons les formules suivantes:
+
+**La position des noeuds est aux quantiles de la variables explicatives x **.
+
+**K optimale : ** 
+\begin{center}
+$ K_{opt}= min(0.25 \times$ number of unique $x_i$; 35)
+\end{center}
+
+**Matrice de lissage:** 
+
+$$S_{\lambda} = X (X^TX + \lambda D)^{-1}X^T$$
+
+**Les valeurs ajustées sont données par : **
+
+$$\hat{y} = S_{\lambda}y$$
+
+**La validation croisée généralisée (GCV) : **
+
+$$GCV(\lambda) = \sum_{i = 1}^{n}(\frac{Y_i-\hat{Y_i}}{1-\frac{1}{n}Trace(S_{\lambda})})^2$$
+
+
+Nous allons nous servir de ces formules pour coder notre fonction.
+
+```{r}
+
+#' Calcule de la trace d'une matrice
+#'
+#' @param A 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+trace <- function(A) {
+  n <- dim(A)[1] # Dimension de la matrice
+  
+  tr <- 0 # Initialisation de la valeur initiale de la trace
+  
+  tr <- lapply(1:n, function(k)
+    A[k, k]) %>%
+    unlist() %>%
+    sum()
+  
+}
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+fossil %>%
+  attach()
+
+K_optimale <- (0.25 * fossil %>%
+                 nrow()) %>%
+  round() %>%
+  min(35)
+
+reg.spline <- function(xech, yech, lambda) {
+  quantile_noeuds <-
+    seq(0, 1, length = K_optimale + 2)[-c(1, K_optimale + 2)]
+  
+  noeud_pos <- quantile(xech, prob = quantile_noeuds)
+  
+  Z <- outer(xech, noeud_pos, "-")
+  
+  Xpol <- Z ^ 2 * (Z > 0)
+  
+  X <- cbind(rep(1, fossil %>%
+                   nrow()), xech, xech ^ 2, Xpol)
+  
+  S_lambda <- X %*% solve(crossprod(X) + lambda * diag(c(rep(0, 3), 
+                                                        rep(1, K_optimale)))) %*% 
+    t(X)
+  
+  
+  Y_chap <- S_lambda %*% yech
+  
+  
+  Trace <-
+    solve(crossprod(X) + lambda * diag(c(rep(0, 3), 
+                                         rep(1, K_optimale)))) %*% 
+    crossprod(X) %>% 
+    trace()
+  
+  return(list(Trace, Y_chap))
+  
+  
+}
+
+grille_lambda <- c(0.001, 0.05, 0.8, 1.5, 8)
+
+y_chap_lambda <-
+  map(grille_lambda, function(i)
+    reg.spline(age_norm, strontium.ratio, i)[2] %>% unlist())
+
+fossil %>%
+  detach()
+```
+
+```{r}
+
+Data_pred_lambda <- do.call(cbind, y_chap_lambda) %>%
+  melt() %>%
+  mutate(
+    lambda = rep(grille_lambda, each = nrow(fossil)),
+    age = rep(fossil$age_norm, length(grille_lambda))
+  )
+
+
+Data_pred_lambda %>%
+  ggplot() +
+  annotate(
+    geom = 'point',
+    x = fossil$age_norm,
+    y = fossil$strontium.ratio,
+    colour = "red"
+  ) +
+  geom_line(aes(x = age, y = value, col = as.factor(lambda)), size = 1) +
+  
+  labs(
+    title = "Prédiction de strontium.ratio pour différentes lambda",
+    x = "lambda",
+    y = "strontium.ratio prédite",
+    colour = "Valeurs de Lambda"
+  ) +
+  theme(legend.position = "bottom",
+        legend.box = "horizontal") +
+  theme_ggplot()
+
+```
+
+Nous constatons que plus la valeur de $\lambda$ est petite plus la prédiction est précise.
+
+Afin de choisir la valeur de $\lambda$ qui donne la meilleure précision, nous allons nous servir de la **validation croisée généralisée**.
+
+```{r}
+grille_lambda1 <- seq(0, 2, by = 0.2)
+
+y_chap_lambda1 <-
+  map(grille_lambda1, function(i)
+    reg.spline(age_norm, strontium.ratio, i)[2] %>% unlist())
+
+trace_lambda <-
+  map(grille_lambda1, function(i)
+    reg.spline(age_norm, strontium.ratio, i)[1] %>% unlist())
+
+GCV <- function(yech, y_chap, tr_lambda) {
+  form1 <- (yech - y_chap) ^ 2 / ((1 - mean(tr_lambda)) ^ 2)
+  
+  return(sum(form1))
+}
+
+GCV1 <-
+  lapply(1:length(grille_lambda1), function(i) {
+    GCV(fossil$strontium.ratio, y_chap_lambda1[[i]], trace_lambda[[i]])
+  })
+
+```
+
+```{r}
+GCV_lambda <- GCV1 %>%
+  unlist() %>%
+  cbind(lambda = grille_lambda1) %>%
+  as.data.frame() %>%
+  rename(GCV_val = '.')
+
+GCV_lambda %>%
+  ggplot() +
+  geom_line(
+    mapping = aes(x = lambda, y = GCV_val),
+    col = "#ffb703",
+    size = 1.2
+  ) +
+  geom_point(
+    mapping = aes(x = lambda, y = GCV_val),
+    col = "blue",
+    shape = 21,
+    fill = "blue"
+  ) +
+  labs(y = "GCV(lambda)") +
+  theme_ggplot()
+
+```
+
+D'après ce graphe, l'erreur minimale par validation croisée est obtenue avec des valeurs de $\lambda$ plus petites.
+
+Nous allons prendre $\lambda = 0.0001$ : 
+
+```{r}
+fossil %>%
+  ggplot() +
+  geom_point(mapping = aes(x = age_norm, y = strontium.ratio, col = "blue")) +
+  geom_line(mapping = aes(
+    x = age_norm,
+    y = unlist(reg.spline(age_norm, strontium.ratio, 0.0001)[2]),
+    col = "#aa2345"
+  ),
+  size = 1.2) +
+  scale_color_identity(
+    name = "",
+    breaks = c("blue", "#aa2345"),
+    labels = c("Nuage de points",
+               "Spline pénalisés avec lambda = 0.01"),
+    guide = "legend"
+  ) +
+  labs(title = "Régression spline pénalisés", x = "Age", y = "strontium.ratio") +
+  theme(legend.position = "bottom", legend.box = "horizontal") +
+  theme_ggplot()
+
+```
+
+```{r}
+y_pred <- reg.spline(age_norm, strontium.ratio, 0.0001)[2] %>% 
+  unlist()
+
+MSE_Bs_gener <- mean((y_pred-strontium.ratio)^2)
+
+MSE_Bs_gener
+```
+
+L'erreur obtenue est égale **6.400524e-10**.
+
+# Conclusion
+
+Nous avons étudié dans ce **TP** différentes méthodes non-paramétriques afin de choisir celle qui estime bien notre variable d'intérêt.
+
+Nous avons commencé avec l'estimation par régression polynômile, ensuite par Bsplines, à noyau et finalement l'estimation par Bsplines pinalisées.
+
+Le tableau ci-dessus présente l'erreur obtenue par chacune de ces méthodes: 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data.frame(
+  Methodes = c(
+    "Erreur_RegPoly",
+    "Erreur_Bspline",
+    "Erreur_noyau",
+    "Erreur_spline_pena"
+  ),
+  Erreurs = c(
+    min(data_erreurs_melt$value),
+    MSE_data_min$MSE_Bspline,
+    h_opt$cv_noyau_h,
+    MSE_Bs_gener
+  )
+) %>%
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "L'erreur obtenue par chaque méthode",
+    col.names = c("Méthodes utilisées", "Erreurs obtenues")
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position")) %>%
+  row_spec(4,
+           bold = T,
+           color = "#151531",
+           background = "#769bf5") %>%
+  row_spec(c(1, 2, 3),
+           bold = T,
+           color = "#151531",
+           background = "white")
+
+```
+
+Nous déduisons d'après cette table que l'estimation par **Splines quadratiques pénalisées** avec $\lambda = 0.0001$ est la plus adaptée à notre jeu de données car elle donne la faible erreur.
+
+Nous remarquons aussi que l'erreur obtenue par la régression polynômiale (*Avec degré 6*) est plus petite que celle obtenue par les Bspline (*Degré 2, Degrée de liberté 11*).
+
+# Travail supplémentaire
+
+Pour l'estimation à noyau de la régression, nous avons utilisé la méthode LOOCV (*leave-one-out-cross-validation) pour diviser notre base de données, cette méthode consiste à piocher un individu au hasard du jeu de données et le considéré comme un échantillon de test et ainsi de suite jusqu'au dernier individu.
+
+Nous avons essayé de diviser notre jeu de données par validation croisée, voici les résultats obtenus
+
+```{r}
+cv_ker <- function(k = 5, data, h, seed = 0207) {
+  list_train <- list() # initialize a list
+  list_test <- list()
+  models_fit <- list()
+  
+  n <- data %>% # cardinal of data
+    nrow()
+  
+  purchase_pred <- rep(0, n) # initialize the response vector
+  
+  klist <- 1:k %>% as.list()
+  
+  fold <- 1:k %>% # create folds
+    rep(ceiling(n / k)) %>%
+    sample(n)
+  
+  samples_test <- map(klist, function(i)
+    data %>%
+      slice(which(fold == i))) # list of data train set
+  
+  samples_train <- map(klist, function(i)
+    data %>%
+      slice(which(fold != i))) # list of data test set
+  
+  ker_reg_train <-
+    map(klist, function(i) {
+      map(1:nrow(samples_train[[i]]), function(j)
+        hat_f(
+          samples_train[[i]]$age[j],
+          samples_train[[i]]$age,
+          h,
+          samples_train[[i]]$strontium.ratio
+        )) %>%
+        unlist()
+    })
+  
+  error_cv_ker <-
+    lapply(klist, function(i) {
+      mean((ker_reg_train[[i]] - samples_train[[i]]$strontium.ratio) ^ 2)
+    }) %>% unlist()
+  
+  return(mean(error_cv_ker))
+  
+}
+
+erreur_cv_noyau <- cv_ker(5, data = fossil, 3)
+
+```
+
+Dans le code ci-dessus, nous avons divisé notre jeu de données en utilisant la validation croisée (*K = 5*), puis nous avons appliqué la fonction **hat_f** codée auparavent pour calculer la prédiction de la variable en question et finalement nous avons calculé l'erreur moyenne des erreurs obtenue dans chaque **fold** de la validation croisée. 
+
+```{r}
+h_2 <- seq(from = 2, to = 7, by = 1)
+cv_noyau_h2 <-
+  lapply(h_2, function(j) {
+    erreur_cv_noyau <- cv_ker(5, data = fossil, j)
+  }) %>%
+  unlist()
+
+
+Data_erreur_h_2 <- data.frame(h = h_2,
+                              cv_noyau_h = cv_noyau_h2)
+
+```
+
+Ici, nous avons calculé l'erreur pour différentes valeurs de **h** et nous avons obtenu le graphe suivant : 
+
+```{r}
+Data_erreur_h_2 %>%
+  ggplot() +
+  geom_point(
+    mapping = aes(y = cv_noyau_h2, x = h_2),
+    colour = "black",
+    size = 1.5,
+    shape = 21,
+    fill = "black"
+  ) +
+  geom_line(
+    mapping = aes(y = cv_noyau_h2, x = h_2),
+    colour = "blue",
+    size = 1.2,
+    linetype = "dashed"
+  ) +
+  labs(title = "Erreur en fonction des valeurs de h",
+       y = "MSE",
+       v = "h") +
+  theme_ggplot()
+
+```
+
+Contrairement à ce que nous avons trouvé par la méthode **LOOCV**, ici, l'erreur obtenue par validation croisée (*k = 5*) augmente avec l'augmentation de la valeur de **h**
+
+```{r}
+
+h_opt2 = Data_erreur_h_2 %>% slice(which(cv_noyau_h2 == min(cv_noyau_h2)))
+h_opt2 %>%
+  kable(
+    format = "latex",
+    booktabs = T,
+    caption = "Estimation à noyau par validation croisée",
+    col.names = c("h", "Erreur obtenue")
+  ) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+
+```
+
+Nous avons obtenu une erreur minimale de **5.9922353643723e-10**.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+Data_train %>%
+  attach()
+
+ratio.pred_train2 <-
+  pred_y(nrow(Data_train), age, age, 2, strontium.ratio)
+
+Data_train %>%
+  ggplot() +
+  geom_point(mapping = aes(y = strontium.ratio,
+                           x = age,
+                           colour = "red")) +
+  geom_point(
+    data = Data_test,
+    mapping = aes(
+      y = Data_test$strontium.ratio,
+      x = Data_test$age,
+      colour = "blue"
+    )
+  ) +
+  geom_line(
+    mapping = aes(y = ratio.pred_train2,
+                  x = age,
+                  colour = "darkgreen"),
+    size = 1.2
+  ) + scale_color_identity(
+    name = "",
+    breaks = c("red", "blue", "darkgreen"),
+    labels = c("Data_train",
+               "Data_test",
+               "Noyau h = 4.5"),
+    guide = "legend"
+  ) +
+  labs(title = "Estimation à noyau") +
+  theme(legend.position = "bottom", legend.box = "horizontal") +
+  theme_ggplot()
+
+Data_train %>%
+  detach()
+
+```
+
+ Nous n'avons pas bien compris pourquoi la courbe des erreurs en fonction des h est décroissante, par contre avec la LOOCV, nous avons eu l'inverse.
+ 
+ Est-ce que cela revient au fait qu'on ne peut pas appliquer la validation croisée classique pour l'estimation à noyau ?
